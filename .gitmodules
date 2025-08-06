@@ -1,0 +1,3 @@
+[submodule "src/external/nim_macros"]
+	path = src/external/nim_macros
+	url = https://github.com/bourkey08/nim_macros.git
