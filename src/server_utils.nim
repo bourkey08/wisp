@@ -16,7 +16,7 @@ macro curSlice(value: string): untyped =
         elif split.len > (curPath.len+1) and (split[curPath.len+1] == `value` or "/" & split[curPath.len+1] == `value`):
             match = true
 
-        elif val.len > 1 and split.len > (curPath.len + val.len):#Handle multiple levels
+        elif val.len > 1 and split.len >= (curPath.len + val.len):#Handle multiple levels
             match = true
             for i in 1..<val.len:
                 if split[curPath.len + i] != val[i] and split[curPath.len + i] != "/" & val[i] and "/" & split[curPath.len + i] != val[i]:
