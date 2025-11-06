@@ -6,6 +6,7 @@
 {.experimental: "codeReordering".}
 
 import std/[macros, asynchttpserver, asyncdispatch, net, strutils, tables, options, cgi]
+import std/macrocache
 
 #Include std nim macros
 include "external/nim_macros/blib.nim"
@@ -14,6 +15,11 @@ include "./types.nim"
 include "./server_verbs.nim"
 include "./server_utils.nim"
 include "./server_resp.nim"
+include "./server_path_args.nim"
+
+#Used to store routes as ast to prevent them being evaluated out of scope
+const routesTbl = CacheTable"routes"
+const mcCounter = CacheCounter"myCounter"
 
 proc newWispConfig*(port: auto, address: string = "", threads: int = 1, maxBody: string = "5MB", reusePort: bool=false): HTTPServerConfig =
     when port is string:
@@ -43,21 +49,41 @@ macro router*(routerBody: untyped): untyped =
     var body = newIdentNode("body")
     var query = newIdentNode("query")
 
-    result = quote do:
-        proc (`req`: Request) {.async.} =
-            #Define variables that are used for internal state
-            var `curPath`: seq[string] = @[]
+    when defined(release):
+        result = quote do:
+            proc (`req`: Request) {.async.} =
+                try:
+                    #Define variables that are used for internal state
+                    var `curPath`: seq[string] = @[]
 
-            #Unpack the query string into an ordered table
-            var `query`: OrderedTable[string, string] = initOrderedTable[string, string]()
-            for entry in decodeData(`req`.url.query):
-                `query`[entry.key] = entry.value
-                
-            #Set some variables that should be available to handler functions
-            var `path` = `req`.url.path
-            var `body` = `req`.body
+                    #Unpack the query string into an ordered table
+                    var `query`: OrderedTable[string, string] = initOrderedTable[string, string]()
+                    for entry in decodeData(`req`.url.query):
+                        `query`[entry.key] = entry.value
+                        
+                    #Set some variables that should be available to handler functions
+                    var `path` = `req`.url.path
+                    var `body` = `req`.body
 
-            `routerBody`
+                    `routerBody`
+                except:
+                    discard
+    else:
+        result = quote do:
+            proc (`req`: Request) {.async.} =
+                #Define variables that are used for internal state
+                var `curPath`: seq[string] = @[]
+
+                #Unpack the query string into an ordered table
+                var `query`: OrderedTable[string, string] = initOrderedTable[string, string]()
+                for entry in decodeData(`req`.url.query):
+                    `query`[entry.key] = entry.value
+                    
+                #Set some variables that should be available to handler functions
+                var `path` = `req`.url.path
+                var `body` = `req`.body
+
+                `routerBody`
 
 #Allows defining additional routes in a seperate function/file
 macro routes*(name: static string, routesBody: untyped): untyped =
@@ -70,8 +96,13 @@ macro routes*(name: static string, routesBody: untyped): untyped =
 
     result = quote do:
         proc `funcName`(`req`: Request, passPath: seq[string], `path`: string, `body`: string, `query`: OrderedTable[string, string]) {.async.} =
-            var `curPath` = passPath
+            var `curPath` = passPath  
             `routesBody`
+
+#Works the same as the routes macro but the route is scoped to the parent
+macro routesInline*(name: static string, routesBody: untyped): untyped =
+    routesTbl[name] = routesBody 
+    mcCounter.inc()
 
 #Called to include additional routes in the routing table for the server
 macro addRoute*(routeBody: untyped): untyped =
@@ -83,6 +114,11 @@ macro addRoute*(routeBody: untyped): untyped =
 
     result = quote do:
         await `routeBody`(`req`, `curPath`, `path`, `body`, `query`)
+
+macro addRoute*(routeName: static string): untyped =
+    let entry = routesTbl[routeName]
+    result = quote do:
+        `entry`
 
 proc start*(self: HTTPServer, cb: proc) {.async.} =   
     #Bind to the HTTP port and address specified in the settings

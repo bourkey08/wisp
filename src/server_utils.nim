@@ -1,6 +1,5 @@
 
 #--------------------------------- HTTP Utils --------------------------------- 
-
 #Used to determin if a request path matches a specific pattern
 macro curSlice(value: string): untyped =
     result = quote do:
@@ -8,9 +7,20 @@ macro curSlice(value: string): untyped =
         var val = `value`.split("/")
 
         var match = false
-        let split = req.url.path.split("/")
+        var split = req.url.path.split("/")
 
-        if split.len > (curPath.len+1) and split[0..(curPath.len+1)].join("/") == `value`:
+        #Check if the value is a variable, if it is handle this seperatly
+        when `value`.hasPathVarArgs():
+            #Extract the path variable arguments as a sequence and then feed them into the macro to generate the runtime code
+            split.genPathVarExtractors(parsePathVarArgs(`value`))
+
+            if pathArgMatch:
+                match = true
+
+        if match:#Prevent the extra comparisons if the path variable match has already succeeded
+            discard
+
+        elif split.len > (curPath.len+1) and split[0..(curPath.len+1)].join("/") == `value`:
             match = true
 
         elif split.len > (curPath.len+1) and (split[curPath.len+1] == `value` or "/" & split[curPath.len+1] == `value`):
