@@ -15,7 +15,6 @@ include "./types.nim"
 include "./server_verbs.nim"
 include "./server_utils.nim"
 include "./server_resp.nim"
-include "./server_path_args.nim"
 
 #Used to store routes as ast to prevent them being evaluated out of scope
 const routesTbl = CacheTable"routes"
